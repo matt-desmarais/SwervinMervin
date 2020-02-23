@@ -3,6 +3,57 @@ from pygame.locals import *
 from enum import Enum
 import settings as s
 import util as u
+from squid import *
+import time
+from Adafruit_MotorHAT import Adafruit_MotorHAT, Adafruit_DCMotor
+import threading
+import atexit
+
+# create a default object, no changes to I2C address or frequency
+mh = Adafruit_MotorHAT(addr=0x60)
+
+# recommended for auto-disabling motors on shutdown!
+def turnOffMotors():
+    mh.getMotor(1).run(Adafruit_MotorHAT.RELEASE)
+    mh.getMotor(2).run(Adafruit_MotorHAT.RELEASE)
+    mh.getMotor(3).run(Adafruit_MotorHAT.RELEASE)
+    mh.getMotor(4).run(Adafruit_MotorHAT.RELEASE)
+
+atexit.register(turnOffMotors)
+
+leftRumble = mh.getMotor(1)
+rightRumble = mh.getMotor(4)
+rightMister = mh.getMotor(3)
+
+leftRumble.run(Adafruit_MotorHAT.FORWARD);
+rightRumble.run(Adafruit_MotorHAT.FORWARD);
+rightMister.run(Adafruit_MotorHAT.BACKWARD);
+leftRumble.setSpeed(0)
+rightRumble.setSpeed(0)
+rightMister.setSpeed(0)
+
+rgb = Squid(16, 20, 21)
+
+import RPi.GPIO as GPIO         # using Rpi.GPIO module
+#from time import sleep         # import function sleep for delay
+GPIO.setmode(GPIO.BCM)          # GPIO numbering
+GPIO.setwarnings(False)         # enable warning from GPIO
+AN2 = 13                # set pwm2 pin on MD10-Hat
+AN1 = 12                # set pwm1 pin on MD10-hat
+DIG2 = 24               # set dir2 pin on MD10-Hat
+DIG1 = 26               # set dir1 pin on MD10-Hat
+GPIO.setup(AN2, GPIO.OUT)       # set pin as output
+GPIO.setup(AN1, GPIO.OUT)       # set pin as output
+GPIO.setup(DIG2, GPIO.OUT)      # set pin as output
+GPIO.setup(DIG1, GPIO.OUT)      # set pin as output
+time.sleep(1)               # delay for 1 seconds
+fanL = GPIO.PWM(DIG1, 100)      # set pwm for M1
+fanR = GPIO.PWM(DIG2, 100)     # set pwm for M2
+fanL.start(0)
+fanR.start(0)
+
+GPIO.output(AN1, GPIO.HIGH)     # set AN1 as HIGH, M1B will turn ON
+GPIO.output(AN2, GPIO.HIGH)     # set AN2 as HIGH, M2B will turn ON
 
 class PlayerStatus(Enum):
     alive = 0
@@ -50,9 +101,13 @@ class Player:
         self.special_text    = None
         self.screech_sfx     = None
 
+
+        self.lastSpray = pygame.time.get_ticks()
+        self.sprayCooldown = 250
+
         self.__set_checkpoint()
 
-    def steer(self, segment):
+    def steer(self, segment, direct):
         """Updates x to simulate steering."""
         bounds = s.TUNNEL_BOUNDS if self.in_tunnel else s.BOUNDS
         self.x = u.limit(self.x + self.direction, -bounds, bounds)
@@ -60,7 +115,7 @@ class Player:
         # Apply centrifugal force if we are going around a corner.
         if segment.curve != 0 and self.status == PlayerStatus.alive:
             # Congratulate player if they've broken personal record.
-            self.x -= (self.direction_speed() * self.speed_percent() * segment.curve * self.settings["centrifugal_force"])
+            self.x -= (self.direction_speed2(direct) * self.speed_percent() * segment.curve * self.settings["centrifugal_force"])
 
     def climb(self, segment):
         """Updates y to simulate hill and valley ascension."""
@@ -75,10 +130,18 @@ class Player:
             for sp in segment.sprites:
                 if sp.sprite.has_key("collision") and self.__collided_with_sprite(sp):
                     if sp.is_hooker():
-                        if not sp.hit:
+                        if not sp.hit and (self.status != PlayerStatus.game_over and self.status != PlayerStatus.level_over):
+                            leftRumble.setSpeed(255)
+                            rightRumble.setSpeed(255)
+                            rightMister.setSpeed(255)
+                            self.lastSpray = pygame.time.get_ticks()
+                            sp.hit = True
+                            self.__hit_hooker()
+                        elif not sp.hit:
                             sp.hit = True
                             self.__hit_hooker()
                     elif sp.is_bonus():
+#                    if sp.is_bonus():
                         segment.remove_sprite(sp)
                         self.__hit_bonus()
                     elif sp.is_speed_boost():
@@ -89,12 +152,18 @@ class Player:
                     break
 
             for comp in segment.competitors:
-                if self.__collided_with_sprite(comp):
+                if self.__collided_with_sprite(comp) and (self.status != PlayerStatus.game_over and self.status != PlayerStatus.level_over):
+                    leftRumble.setSpeed(255)
+                    rightRumble.setSpeed(255)
                     self.__hit_competitor()
-
+                elif self.__collided_with_sprite(comp):
+                    self.__hit_competitor()
                     break
 
     def render(self, window, segment):
+        now = pygame.time.get_ticks()
+        if now - self.lastSpray >= self.sprayCooldown:
+            rightMister.setSpeed(0)
         """Renders the player sprite to the given surface."""
         top    = segment.top
         bottom = segment.bottom
@@ -145,7 +214,7 @@ class Player:
         if self.status != PlayerStatus.alive:
             self.level_over_lag -= 1
 
-    def render_hud(self, window):
+    def render_hud(self, window, direct):
         """Renders a Head-Up display on the active window."""
         center      = (75, s.DIMENSIONS[1] - 80)
         speedo_rect = (35, s.DIMENSIONS[1] - 120, 80, 80)
@@ -154,8 +223,33 @@ class Player:
         finish      = self.__circular_orbit(center, 36, orbit_pos)
         speed       = round((self.speed / s.SEGMENT_HEIGHT) * 1.5, 1)
         font        = pygame.font.Font(s.FONTS["retro_computer"], 16)
+        wheelfont   = pygame.font.Font(s.FONTS["retro_computer"], 48)
         st          = self.special_text
         time_colour = s.COLOURS["text"] if self.time_left > 5 else s.COLOURS["red"]
+
+########################
+
+        if self.status != PlayerStatus.game_over and self.status != PlayerStatus.level_over:
+#         if self.status == PlayerStatus.alive:
+            if speed == 0:
+                fanL.start(0)
+                fanR.start(0)
+            elif speed > 200:
+                fanL.start(100)
+                fanR.start(100)
+            else:
+                 pwm = round((speed/2)*.8)
+                 fanL.start(pwm)
+                 fanR.start(pwm)
+
+#        if speed < 50:
+#            rgb.set_color(RED)
+#        elif speed < 100:
+#            rgb.set_color(YELLOW)
+#        elif speed < 150:
+#            rgb.set_color(GREEN)
+
+
 
         # Speedometer.
         pygame.draw.circle(window, s.COLOURS["black"], center, 50, 2)
@@ -170,7 +264,25 @@ class Player:
         u.render_text("%s/%s" % (self.lap, self.total_laps) , window, font, s.COLOURS["text"], (s.DIMENSIONS[0] - 58, 10))
 
         u.render_text("Time", window, font, time_colour, (10, 10))
+        u.render_text("X: "+str(self.x), window, font, time_colour, (10, 60))
+        u.render_text("Pos: "+str(self.position), window, font, time_colour, (10, 80))
+        u.render_text("Dir: "+str(self.direction), window, font, time_colour, (10, 100))
+        u.render_text("Lap %: "+str(self.lap_percent), window, font, time_colour, (10, 120))
+        u.render_text("Dir: "+str(self.direction), window, font, time_colour, (10, 140))
+        u.render_text("Accel: "+str(self.acceleration), window, font, time_colour, (10, 160))
+        u.render_text("Crash: "+str(self.crashed), window, font, time_colour, (10, 180))
+        u.render_text("speed: "+str(self.speed), window, font, time_colour, (10, 200))
         u.render_text(str(math.trunc(self.time_left)), window, font, time_colour, (90, 10))
+
+        direct = round(direct, 2)
+        turnMod = abs(direct) # add .25 or .5 old test
+        u.render_text("Wheel Axis: ", window, font, time_colour, (10, 220))
+        if(direct < 0):
+            u.render_text("    "+str(direct), window, wheelfont, time_colour, (10, 180))
+        if(direct >= 0):
+            u.render_text("     "+str(direct), window, wheelfont, time_colour, (10, 180))
+
+        u.render_text("Turn Mod: "+str(turnMod), window, font, time_colour, (10, 240))
 
         # Render special text.
         if st:
@@ -209,8 +321,10 @@ class Player:
             self.__set_special_text("New High Score!", 2)
 
         if self.status == PlayerStatus.game_over:
+            fanL.start(0)
             self.__game_over_overlay(window)
         elif self.status == PlayerStatus.level_over:
+            fanL.start(0)
             self.__level_over_overlay(window)
 
         # Display lap difference (unless we've only done one lap).
@@ -241,6 +355,7 @@ class Player:
     def accelerate(self):
         """Updates speed at appropriate acceleration level."""
         curr_speed = self.speed_boost * (self.speed + ((self.settings["top_speed"] / self.settings["acceleration_factor"]) * self.acceleration))
+
         self.speed = u.limit(curr_speed, 0, self.speed_boost * self.settings["top_speed"])
 
     def travel(self, track_length, window):
@@ -248,6 +363,16 @@ class Player:
         pos        = self.position + (s.FRAME_RATE * self.speed)
         td         = (datetime.datetime.now() - self.last_checkpoint)
         total_secs = (td.microseconds + (td.seconds + td.days * 24 * 3600) * 10**6) / 10**6 # td.total_seconds() not implemented in Python 2.6
+
+
+        speed = round((self.speed / s.SEGMENT_HEIGHT) * 1.5, 1)
+        if(self.x >= 1.0 and (self.status != PlayerStatus.game_over and self.status != PlayerStatus.level_over)):
+            rightRumble.setSpeed(int((speed)*(self.x)))
+        #set rumble pack left side to increase the further off the road
+        if(self.x <= -1.0 and (self.status != PlayerStatus.game_over and self.status != PlayerStatus.level_over)):
+            leftRumble.setSpeed(int((speed)*abs(self.x)))
+
+
 
         self.new_lap = False
 
@@ -309,7 +434,8 @@ class Player:
         self.position    = pos
         self.lap_percent = round((pos / track_length) * 100)
 
-    def set_acceleration(self, keys):
+    def set_acceleration(self, accel, brake, keys):
+        speed = round((self.speed / s.SEGMENT_HEIGHT) * 1.5, 1)
         """Updates the acceleration factor depending on world conditions."""
         a = -s.FRAME_RATE
 
@@ -317,17 +443,46 @@ class Player:
         if self.crashed:
             a = 0
         else:
-            if (self.x > 1.0 or self.x < -1.0) and self.speed > (self.settings["top_speed"] / self.settings["offroad_top_speed_factor"]):
+            #if player on track or stopped turn off rumble packs
+#            if (((self.x <= 1.0 and self.x >= -1.0) or speed == 0) and (self.status != PlayerStatus.game_over and self.status != PlayerStatus.level_over)):
+            if(speed <= 70 or self.status == PlayerStatus.game_over or self.status == PlayerStatus.level_over):
+                rightRumble.setSpeed(0)
+                leftRumble.setSpeed(0)
+            if ((self.x <= 1.0 and speed >= 70 and self.x >= -1.0) and (self.status != PlayerStatus.game_over and self.status != PlayerStatus.level_over)):
+#                rightRumble.setSpeed(0)
+#                leftRumble.setSpeed(0)
+                rightRumble.setSpeed(int(speed*.75))
+                leftRumble.setSpeed(int(speed*.75))
+            if ((self.x > 1.0 or self.x < -1.0) and self.speed > (self.settings["top_speed"] / self.settings["offroad_top_speed_factor"]) and (self.status != PlayerStatus.game_over and self.status != PlayerStatus.level_over)):
                 a = a * 3
+                #set rumble pack right side to increase the further off the road
+                if(self.x >= 1.0):
+                    rightRumble.setSpeed(int((speed)*(self.x)))
+                #set rumble pack left side to increase the further off the road
+                if(self.x <= -1.0):
+                    leftRumble.setSpeed(int((speed)*abs(self.x)))
             else:
                 if keys[K_UP] or keys[K_x] or s.AUTO_DRIVE or self.status != PlayerStatus.alive:
                     a = s.FRAME_RATE
                 elif keys[K_DOWN]:
                     a = -(s.FRAME_RATE * self.settings["deceleration"])
+                if accel == 1 or s.AUTO_DRIVE or self.status != PlayerStatus.alive:
+                    a = s.FRAME_RATE
+                elif brake == 1:
+                    a = -(s.FRAME_RATE * self.settings["deceleration"])
+
+        #taper acceleration based on calculated speed
+#        if(a > 0):
+#            if(speed > 50):
+#                a = .75 * a
+#            elif(speed > 100):
+#                a = .6 * a
+#            elif(speed > 150):
+#                a = .5 * a
 
         self.acceleration = a
 
-    def set_direction(self, keys):
+    def set_direction(self, axis, keys):
         """Updates the direction the player is going, accepts a key-map."""
         d = 0
 
@@ -336,6 +491,14 @@ class Player:
                 d = -self.direction_speed()
             elif keys[K_RIGHT]:
                 d = self.direction_speed()
+            
+#            if abs(axis) > .20:
+#                d = axis * self.direction_speed()
+            
+            if axis < -0.15:
+                d = -self.direction_speed2(axis)
+            elif axis > 0.15:
+                d = self.direction_speed2(axis)
 
         self.direction = d
 
@@ -345,20 +508,32 @@ class Player:
     def direction_speed(self):
         return (s.FRAME_RATE * 3 * self.speed_percent())
 
+    def direction_speed2(self, axis):
+#        return (s.FRAME_RATE * 3 * self.speed_percent())
+#        return (s.FRAME_RATE * 3 * (self.speed_percent() * (abs(axis)+1)))
+#        return ((s.FRAME_RATE * 3 * (abs(axis)+.35)) * self.speed_percent())
+        return ((s.FRAME_RATE * 3 * self.speed_percent()) * (abs(axis)+.25))
+
     def segment_percent(self):
         """Returns a value between 0 and 1 indicating how far through the current segment we are."""
         return ((self.position + s.PLAYER_Z) % s.SEGMENT_HEIGHT) / s.SEGMENT_HEIGHT
 
     def handle_crash(self):
         """Proceeds player through crash state."""
-        if self.crashed:
+        if self.crashed and (self.status != PlayerStatus.game_over and self.status != PlayerStatus.level_over):
             step = -0.025 if self.x > 0 else 0.025
-
             if round(self.x, 1) != 0:
+                leftRumble.setSpeed(int(255*abs(self.x)-1))
+                rightRumble.setSpeed(int(255*abs(self.x)-1))
                 self.x += step
             else:
+                leftRumble.setSpeed(0)
+                rightRumble.setSpeed(0)
                 pygame.mixer.music.set_volume(s.MUSIC_VOLUME)
                 self.crashed = False
+#        else:
+#            leftRumble.setSpeed(0)
+#            rightRumble.setSpeed(0)
 
     def finished(self):
         return self.level_over_lag == 0

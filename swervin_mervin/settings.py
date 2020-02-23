@@ -18,14 +18,14 @@ SEGMENT_HEIGHT        = 260
 RUMBLE_LENGTH         = 3
 DRAW_DISTANCE         = 125
 ROAD_WIDTH            = 2100
-LANES                 = 4
+LANES                 = 3
 BOUNDS                = 2.1
 TUNNEL_BOUNDS         = 0.85
 TUNNEL_HEIGHT         = 90
 TUNNEL_LIGHT_FREQ     = 15
 AUTO_DRIVE            = False
 PLAYER_ANIM_HOLD      = 8
-CHECKPOINT            = 51
+CHECKPOINT            = 120
 LAP_DIFFICULTY_FACTOR = 2
 LAPS_PER_LEVEL        = 3
 MINIMUM_DIFFICULTY    = 3
@@ -281,7 +281,7 @@ PLAYERS            = [{"name": "Swervin' Mervin",
                         "offroad_top_speed_factor": 1.8,
                         "acceleration_factor": 5.2,
                         "deceleration": 2.5,
-                        "centrifugal_force": 0.366,
+                        "centrifugal_force": 0.35,
                         "city": "Surfers Paradise, QLD",
                         "select_sfx": "candy_select.ogg",
                         "sprites":
@@ -561,7 +561,7 @@ SPRITES           = {"column": {
                        "width": 80,
                        "height": 10,
                        "path": None,
-                       "collision": [0, 0]},
+                       "collision": [0.05, 0.05]},
                      "tunnel_light": {
                        "path": "tunnel_light.png",
                        "width": 8,
@@ -650,17 +650,17 @@ SPRITES           = {"column": {
                        "height": 50},
                      "competitor2": {
                        "path": "competitor2.png",
-                       "collision": [0.05, 0.05],
+                       "collision": [0.05, 0.1],
                        "width": 80,
                        "height": 50},
                      "competitor3": {
                        "path": "competitor3.png",
-                       "collision": [0.05, 0.05],
+                       "collision": [0.05, 0.1],
                        "width": 80,
                        "height": 50},
                      "bonus": {
                        "path": "bonus.png",
-                       "collision": [0, 0],
+                       "collision": [0.05, 0.05],
                        "bonus": True,
                        "width": 25,
                        "height": 25},
@@ -672,28 +672,31 @@ SPRITES           = {"column": {
                        "height": 42},
                      "hooker1": {
                        "path": "hooker1.png",
-                       "collision": [0.42, 0.36],
+                       "collision": [0.42, 0.46],
                        "hooker": True,
                        "width": 25,
                        "height": 42},
                      "hooker2": {
                        "path": "hooker2.png",
-                       "collision": [0.42, 0.36],
+                       "collision": [0.42, 0.46],
                        "hooker": True,
                        "width": 25,
                        "height": 42},
                      "hooker3": {
                        "path": "hooker3.png",
-                       "collision": [0.42, 0.36],
+                       "collision": [0.42, 0.46],
                        "hooker": True,
                        "width": 25,
                        "height": 42},
                      "barrier": {
                        "path": "barrier.png",
-                       "collision": [0.05, 0.05],
-                       "width": 60,
+                       #changed values from 0.05 to 0
+                       "collision": [0.00, 0.05],
+                       #changed width from 60 to 50
+                       "width": 40,
                        "height": 35},
                      }
 
 if os.path.isfile("swervin_mervin/settings_local.py"):
     execfile("swervin_mervin/settings_local.py")
+5

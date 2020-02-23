@@ -24,6 +24,9 @@ class Game:
         self.high_scores     = hs.HighScores()
 
     def play(self):
+        pygame.joystick.init()
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
         if s.TITLE_SCREEN:
             self.__title_screen()
 
@@ -91,13 +94,18 @@ class Game:
 
         pygame.display.update()
 
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
+
         while self.waiting:
             for e in pygame.event.get():
                 u.try_quit(e)
 
                 if e.type == KEYDOWN and e.key in [K_UP, K_RETURN]:
                     self.waiting = False
-     
+                if e.type == pygame.JOYBUTTONDOWN:
+                    self.waiting = False
+
             self.clock.tick(s.FPS)
 
     def __game_cycle(self):
@@ -106,13 +114,29 @@ class Game:
 
         p.travel(l.track_length(), self.window)
 
+        pygame.joystick.init()
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
+        direct = joystick.get_axis(0)
+
         base_segment   = l.find_segment(p.position)
         player_segment = l.find_segment(p.position + s.PLAYER_Z)
-
+        ##################################
+        player_segment250 = l.find_segment((p.position-250) + s.PLAYER_Z)
+        player_segment500 = l.find_segment((p.position-500) + s.PLAYER_Z)
+        player_segment750 = l.find_segment((p.position-750) + s.PLAYER_Z)
+        print("Position: "+str(p.position))
+        print("Segment: "+str(player_segment))
+        ##################################
         p.accelerate()
-        p.steer(player_segment)
+        p.steer(player_segment, direct)
         p.climb(base_segment)
         p.detect_collisions(player_segment)
+        ##################################
+        p.detect_collisions(player_segment250)
+        p.detect_collisions(player_segment500)
+        p.detect_collisions(player_segment750)
+        ##################################
         p.handle_crash()
 
         # Sprinkle some random bonuses into the next lap if we are lucky.
@@ -220,7 +244,7 @@ class Game:
             segment.render_world_objects(self.window)
 
         p.render(self.window, base_segment)
-        p.render_hud(self.window)
+        p.render_hud(self.window, direct)
 
         if p.blood_alpha > 0:
             p.render_blood(self.window)
@@ -234,9 +258,20 @@ class Game:
 
         # Steering, acceleration.
         keys = pygame.key.get_pressed()
-        p.set_acceleration(keys)
-        p.set_direction(keys)
-
+        
+        pygame.joystick.init()
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
+        #xbox a button
+        accel = joystick.get_button(0)
+        #xbox b button
+        brake = joystick.get_button(1)
+        #left joystick
+        direct = joystick.get_axis(0)
+        p.set_acceleration(accel, brake, keys)
+        p.set_direction(direct, keys)
+#        p.set_acceleration(keys)
+#        p.set_direction(keys)
     def __pause_cycle(self):
         pause_font = pygame.font.Font(s.FONTS["retro_computer"], 64)
         pause_text = pause_font.render("Paused", 1, s.COLOURS["text"])

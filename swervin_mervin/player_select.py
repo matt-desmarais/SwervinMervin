@@ -1,6 +1,7 @@
 import pygame, os
 import settings as s
 import util as u
+import time
 
 class PlayerSelect():
     """Displays a player selection screen."""
@@ -15,6 +16,7 @@ class PlayerSelect():
                                  "name": pygame.font.Font(s.FONTS["retro_computer"], 18),
                                  "details": pygame.font.Font(s.FONTS["retro_computer"], 12),
                                  "stats": pygame.font.Font(s.FONTS["retro_computer"], 8)}
+        self.cooldown = 0
         
     def progress(self, window):
         txt_title     = self.fonts["title"].render("Player Select", 1, s.COLOURS["text"])
@@ -79,16 +81,34 @@ class PlayerSelect():
         if self.player_chosen:
             self.finalise_selection(player)
 
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
+        
+        if(self.cooldown > 0):
+            self.cooldown -= 1
         for e in pygame.event.get():
             u.try_quit(e)
 
+
             if e.type == pygame.KEYDOWN and not self.player_chosen:
-                if e.key == pygame.K_LEFT and self.selected > 0:
+                if (e.key == pygame.K_LEFT) and self.selected > 0:
                     self.selected -= 1
-                elif e.key == pygame.K_RIGHT and self.selected < len(s.PLAYERS) - 1:
+                elif (e.key == pygame.K_RIGHT) and self.selected < len(s.PLAYERS) - 1:
                     self.selected += 1
                 elif e.key == pygame.K_RETURN:
                     self.player_chosen = True
+            if (e.type == pygame.JOYAXISMOTION or e.type == pygame.JOYBUTTONDOWN) and not self.player_chosen:
+                if (joystick.get_axis(0)<-.2) and self.selected > 0 and self.cooldown <= 0:
+                    self.selected -= 1
+                    self.cooldown = 3
+                    print self.selected
+                elif (joystick.get_axis(0)>.2) and self.selected < len(s.PLAYERS) - 1 and self.cooldown <= 0:
+                    self.selected += 1
+                    self.cooldown = 3
+                    print self.selected
+                elif joystick.get_button(0):
+                    self.player_chosen = True
+#            pygame.event.clear()
 
     def finalise_selection(self, player):
         pygame.mixer.music.load(os.path.join("lib", player["select_sfx"]))

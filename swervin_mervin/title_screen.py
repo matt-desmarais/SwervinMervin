@@ -7,7 +7,7 @@ class TitleScreen():
 
     def __init__(self):
         self.finished   = False
-        self.ready      = False
+        self.ready      = True
         self.background = pygame.image.load(os.path.join("lib", "title.png"))
         self.logo_a     = pygame.image.load(os.path.join("lib", "title_swervin.png"))
         self.logo_b     = pygame.image.load(os.path.join("lib", "title_mervin.png"))
@@ -27,10 +27,16 @@ class TitleScreen():
         self.state_1_step(window)
         self.state_2_step(window)
 
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
+
         for e in pygame.event.get():
             u.try_quit(e)
 
             if e.type == pygame.KEYDOWN and e.key == pygame.K_RETURN and self.ready:
+                pygame.mixer.music.fadeout(1500)
+                self.finished = True
+            if e.type == pygame.JOYBUTTONDOWN and joystick.get_button(0) == 1 and self.ready:
                 pygame.mixer.music.fadeout(1500)
                 self.finished = True
 
